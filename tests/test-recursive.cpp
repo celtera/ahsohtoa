@@ -8,6 +8,7 @@ struct color
 {
   float r, g, b, a;
 };
+
 struct physics_component
 {
   vec3 position;
@@ -20,10 +21,48 @@ struct render_component
   color col;
 };
 
+struct vec3_ref
+{
+  float& x, &y, &z;
+};
+struct color_ref
+{
+  float& r, &g, &b, &a;
+};
+struct physics_component_ref
+{
+  vec3_ref position;
+  vec3_ref speed;
+  vec3_ref acceleration;
+};
+
+struct render_component_ref
+{
+  color_ref col;
+};
+
 struct entity
 {
   physics_component physics;
   render_component render;
+
+  // Again, not necessary but makes iteration much more fun
+  struct reference_type {
+    reference_type(auto t)
+        : physics {
+        { get<0>(t), get<1>(t), get<2>(t) },
+        { get<3>(t), get<4>(t), get<5>(t) },
+        { get<6>(t), get<7>(t), get<8>(t) }
+        }
+        , render {
+        { get<9>(t), get<10>(t), get<11>(t), get<12>(t) }
+        } {
+
+        }
+    physics_component_ref physics;
+    render_component_ref render;
+  };
+
 };
 
 int main()
@@ -37,18 +76,42 @@ int main()
 
   e.get<float>(access(entity, physics.speed.y), 123) = 1.0;
 
+  // std::spans can be accessed directly
   auto x = e.components<float>(access(entity, physics.position.x));
   auto y = e.components<float>(access(entity, physics.position.y));
   auto z = e.components<float>(access(entity, physics.position.z));
 
-  auto dx = e.components<float>(access(entity, physics.position.x));
-  auto dy = e.components<float>(access(entity, physics.position.y));
-  auto dz = e.components<float>(access(entity, physics.position.z));
+  auto sx = e.components<float>(access(entity, physics.speed.x));
+  auto sy = e.components<float>(access(entity, physics.speed.y));
+  auto sz = e.components<float>(access(entity, physics.speed.z));
 
+  // Initialize
   for(int i = 0; i < e.size(); i++) {
-      x[i] += dx[i];
-      y[i] += dy[i];
-      z[i] += dz[i];
+      x[i] = 0.f; sx[i] = 1.f;
+      y[i] = 0.f; sy[i] = 1.f;
+      z[i] = 0.f; sz[i] = 1.f;
+
+      assert(x[i] == 0.f);
+  }
+
+  // Move things through span access
+  for(int i = 0; i < e.size(); i++) {
+      x[i] += sx[i];
+      y[i] += sy[i];
+      z[i] += sz[i];
+
+      assert(x[i] == 1.f);
+  }
+
+  // If one provides a reference_type with a good constructor,
+  // this will also work:
+  for(int i = 0; i < e.size(); i++) {
+      auto elt = e.get(i);
+      elt.physics.position.x += elt.physics.speed.x;
+      elt.physics.position.y += elt.physics.speed.y;
+      elt.physics.position.z += elt.physics.speed.z;
+
+      assert(elt.physics.position.x == 2.f);
   }
 }
 

@@ -204,11 +204,18 @@ struct recursive_arrays
   {
     // Nice struct of &: todo
     // Otherwise, we return a std::tuple<Component1&, Component2&, ...>
-    return [&]<std::size_t... N>(std::index_sequence<N...>)
+    auto ret = [&]<std::size_t... N>(std::index_sequence<N...>)
     {
       return std::tie(std::get<N>(vec)[index]...);
+    } (indices{});
+    if constexpr (requires { sizeof(typename T::reference_type); })
+    {
+      return typename T::reference_type{ret};
     }
-    (indices{});
+    else
+    {
+      return ret;
+    }
   }
 
   //! Get a reference to all the components of a given entity
