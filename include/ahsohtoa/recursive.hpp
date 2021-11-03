@@ -7,11 +7,31 @@
 
 #include <type_traits>
 
+/**
+ * \file ahsohtoa.hpp
+ *
+ * In this file, we'll assume for the sake of documentation that T is Foo in the following:
+ *
+ * struct Bar {
+ *   struct Impl {
+ *     char c;
+ *   } impl;
+ * };
+ *
+ * struct Foo {
+ *   int x;
+ *   float y;
+ *   Bar z;
+ * };
+ */
 namespace ahso
 {
+//! Check if a type is an aggregate
 template <typename T>
 concept aggregate = std::is_aggregate_v<T>;
 
+//! Recursively flattens std::tuple<int, float, std::tuple<std::tuple<char>>>
+//! into std::tuple<int, float, char>
 template <typename T>
 struct flatten
 {
@@ -26,6 +46,8 @@ struct flatten<std::tuple<R...>>
   using type = boost::mp11::mp_flatten<std::tuple<flatten_t<R>...>>;
 };
 
+//! Recursively converts an aggregate into a flattened tuple:
+//! deaggregate_t<T> == std::tuple<int, float, char>
 template <typename T>
 struct deaggregate;
 
@@ -47,68 +69,82 @@ struct deaggregate<T>
   using type = boost::mp11::mp_transform<flatten_t, ftype>;
 };
 
+//! Utility to pass a type as argument
 template <typename T>
 struct to_type
 {
-  using type = std::decay_t<T>;
+  using type = T;
 };
 
+//! Used as a type-safe index to access fields
 enum class member_offset : int
 {
 };
 
-template <typename Obj>
+/**
+ * Implements a mapping from offsets in a structure, to indices.
+ */
+template <typename T>
 struct access_recursive
 {
-  std::array<int, sizeof(Obj) * 2> index_map{};
+  // index_map[offsetof(T, x)] = 0;
+  // index_map[1] = 0
+  // index_map[2] = 0
+  // index_map[3] = 0
+  // index_map[offsetof(T, y)] = 1;
+  // index_map[5] = 0;
+  // index_map[6] = 0;
+  // index_map[7] = 0;
+  // index_map[offsetof(T, z.impl.c)] = 2;
+  // index_map[9] = 0;
+  // index_map[10] = 0;
+  // index_map[11] = 0;
+  std::array<int, sizeof(T)> index_map{};
 
+  // We want to make sure that this computation occurs at compile-time
   consteval access_recursive()
   {
-    constexpr Obj e{};
     int cur_offset = 0, cur_index = 0;
-    compute_offsets<Obj>(cur_offset, cur_index);
+    compute_offsets<T>(cur_offset, cur_index);
   }
 
-  template <typename T>
+private:
+  // Here we just increment by sizeof(Field) on each new field
+  template <typename U>
   constexpr int compute_offsets(int& cur_offset, int cur_index = 0)
   {
-    int orig = cur_offset;
-
+    // What we use to recurse
     auto compute_rec = [&]<typename Field>(to_type<Field> field)
     {
       index_map[cur_offset] = cur_index;
 
-      cur_index += 1;
-      cur_offset += sizeof(Field); // note that it requires packed structs
-
+      // If the field is an aggregate, we recurse
       if constexpr (ahso::aggregate<Field>)
       {
-        // First member will have the same address, we go backwards
-        cur_offset -= sizeof(Field);
-        cur_index -= 1;
         cur_index = compute_offsets<Field>(cur_offset, cur_index);
+      }
+      else
+      {
+        // Otherwise, we increment our indices
+        cur_index += 1;
+        cur_offset += sizeof(Field); // note that it requires packed structs
       }
     };
 
+    // Call the above on every field
     [&]<std::size_t... N>(std::index_sequence<N...>)
     {
-      (compute_rec(to_type<std::decay_t<decltype(boost::pfr::get<N>(T{}))>>{}),
-       ...);
+      (compute_rec(to_type<boost::pfr::tuple_element_t<N, U>>{}), ...);
     }
-    (std::make_index_sequence<boost::pfr::tuple_size_v<T>>{});
+    (std::make_index_sequence<boost::pfr::tuple_size_v<U>>{});
     return cur_index;
   }
 };
 
-template<std::size_t N, typename T>
-struct nth_element {
-  using type = std::decay_t<decltype(std::get<N>(deaggregate_t<T>{}))>;
-};
-
-template<std::size_t N, typename T>
-using nth_element_type = typename nth_element<N, T>::type;
-
-
+//! If a type is an aggregate, go as deep as possible until we get a non-aggregate element.
+//! T t;
+//! access_deepest_aggregate_first_element(t) == t.x;
+//! access_deepest_aggregate_first_element(t.z) == t.z.impl.c;
 template<typename F>
 auto& access_deepest_aggregate_first_element(F& field) {
   if constexpr(aggregate<F>)
@@ -117,6 +153,20 @@ auto& access_deepest_aggregate_first_element(F& field) {
     return field;
 }
 
+//! Utilities to access the nth non-aggregate element of an aggregate, recursively.
+//! nth_element_type<0, T> == int;
+//! nth_element_type<1, T> == float;
+//! nth_element_type<2, T> == char;
+template<std::size_t N, typename T>
+struct nth_element {
+  using type = std::decay_t<decltype(std::get<N>(deaggregate_t<T>{}))>;
+};
+
+template<std::size_t N, typename T>
+using nth_element_type = typename nth_element<N, T>::type;
+
+namespace detail
+{
 template<std::size_t N, typename T, typename U>
 nth_element_type<N, T>* get_rec_impl(U& field, int& k, nth_element<N, T> )
 {
@@ -144,6 +194,13 @@ nth_element_type<N, T>* get_rec_impl(U& field, int& k, nth_element<N, T> )
 
   return ptr;
 }
+}
+
+//! Accesses the nth member of an aggregate, recursively.
+//! T t;
+//! get_rec<0>(t) == t.x;
+//! get_rec<1>(t) == t.y;
+//! get_rec<2>(t) == t.z.impl.c;
 template<std::size_t N, typename T>
 nth_element_type<N, T>& get_rec(T& t)
 {
@@ -162,7 +219,7 @@ nth_element_type<N, T>& get_rec(T& t)
       if constexpr(aggregate<F>)
       {
         // Go look in it
-        if(auto ret = get_rec_impl(field, k, nth_element<N, T>{})) {
+        if(auto ret = detail::get_rec_impl(field, k, nth_element<N, T>{})) {
           ptr = ret;
         }
       }
@@ -176,14 +233,25 @@ nth_element_type<N, T>& get_rec(T& t)
 }
 
 
+/**
+ * Transforms a structure into the equivalent structure-of-arrays, recursively:
+ *
+ * T -> std::tuple<std::vector<int>, std::vector<float>, std::vector<char>>
+ */
 template <template <typename...> typename Container, typename T>
 struct recursive_arrays
 {
+  //! Yields std::tuple<int, float, char>
   using tuple_type = deaggregate_t<T>;
+
+  //! Yields std::tuple<std::vector<int>, std::vector<float>, std::vector<char>>
   using vec_type = boost::mp11::mp_transform<Container, tuple_type>;
+
+  //! Yields std::index_sequence<0, 1, 2>
   using indices = std::make_index_sequence<std::tuple_size_v<tuple_type>>;
+
+  //! Our data storage
   vec_type vec;
-  static constexpr access_recursive<T> accessors{};
 
   //! Get the number of stored entities
   std::size_t size() const noexcept { return std::get<0>(vec).size(); }
@@ -247,6 +315,8 @@ struct recursive_arrays
     [&]<std::size_t... N>(std::index_sequence<N...>)
     {
       // Go from offset of member to index in flat tuple
+      static constexpr access_recursive<T> accessors{};
+
       int index = accessors.index_map[(int)offset];
 
       auto impl = [&]<std::size_t M>()
@@ -277,6 +347,7 @@ struct recursive_arrays
     {
       return std::tie(std::get<N>(vec)[index]...);
     } (indices{});
+
     if constexpr (requires { sizeof(typename T::reference_type); })
     {
       return typename T::reference_type{ret};
@@ -292,4 +363,6 @@ struct recursive_arrays
 };
 
 }
+
+//! A macro to simplify calling the functions which take a member
 #define access(root, member) ((ahso::member_offset)offsetof(root, member))
