@@ -9,17 +9,27 @@ takes a structure such as:
 struct Foo {
   int a;
   float b;
+  struct Bar {
+    float x;
+    char y;
+  } c;
 };
 ```
 
 and, given:
 ```C++
-  array<std::vector, Foo> storage;
+ahso::arrays<std::vector, Foo> storage_direct;
+
+ahso::recursive_arrays<std::vector, Foo> storage_recursive;
 ```
 
-will synthesize:
+will respectively synthesize types which look like:
 ```C++
-  std::tuple<std::vector<int>, std::vector<float>>
+// for storage_direct: 
+std::tuple<std::vector<int>, std::vector<float>, std::vector<Bar>>
+
+// for storage_recursive: 
+std::tuple<std::vector<int>, std::vector<float>, std::vector<float>, std::vector<char>> 
 ```
 
 ## Dependencies
@@ -68,6 +78,9 @@ int main()
 
   // Access a specific component for entity "index"
   e.get<physics_component>(index).position.x = 2;
+  
+  // Or if the proper type is provided (until we get metaclasses, see example): 
+  e[index].physics.position.x = 2;
 
   // Remove an entity
   e.erase(index);
