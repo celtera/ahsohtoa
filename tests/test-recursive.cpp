@@ -69,6 +69,22 @@ int main()
 {
   ahso::recursive_arrays<std::vector, entity> e;
 
+entity zzzx ;
+
+  e.add_entity({
+    .physics {
+      { 1000 + 0, 1000 + 1, 1000 + 2 },
+      { 1000 + 3, 1000 + 4, 1000 + 5 },
+      { 1000 + 6, 1000 + 7, 1000 + 8 }
+    }
+  , .render {
+      { 1000 + 9, 1000 + 10, 1000 + 11, 1000 + 12 }
+    }
+  });
+
+  assert(e[0].physics.speed.y == 1004);
+  assert(e[0].render.col.g == 1010);
+
   e.reserve(500);
   e.resize(30);
 

@@ -47,15 +47,14 @@ struct deaggregate<T>
   using type = boost::mp11::mp_transform<flatten_t, ftype>;
 };
 
-template <auto... funcs>
-struct ftuple
-{
-};
-
 template <typename T>
 struct to_type
 {
   using type = std::decay_t<T>;
+};
+
+enum class member_offset : int
+{
 };
 
 template <typename Obj>
@@ -101,9 +100,81 @@ struct access_recursive
   }
 };
 
-enum class member_offset : int
-{
+template<std::size_t N, typename T>
+struct nth_element {
+  using type = std::decay_t<decltype(std::get<N>(deaggregate_t<T>{}))>;
 };
+
+template<std::size_t N, typename T>
+using nth_element_type = typename nth_element<N, T>::type;
+
+
+template<typename F>
+auto& access_deepest_aggregate_first_element(F& field) {
+  if constexpr(aggregate<F>)
+    return access_deepest_aggregate_first_element(boost::pfr::get<0>(field));
+  else
+    return field;
+}
+
+template<std::size_t N, typename T, typename U>
+nth_element_type<N, T>* get_rec_impl(U& field, int& k, nth_element<N, T> )
+{
+  nth_element_type<N, T>* ptr{};
+  if(k == N)
+  {
+    ptr = &access_deepest_aggregate_first_element(field);
+    ++k;
+  }
+  else
+  {
+    if constexpr(aggregate<U>)
+    {
+      [&]<std::size_t... W>(std::index_sequence<W...>)
+      {
+        ((ptr = get_rec_impl(boost::pfr::get<W>(field), k, nth_element<N, T> {})) || ...);
+        //(std::get<W>(vec).reserve(space), ...);
+      } (std::make_index_sequence<boost::pfr::tuple_size_v<U>>{});
+    }
+    else
+    {
+      ++k;
+    }
+  }
+
+  return ptr;
+}
+template<std::size_t N, typename T>
+nth_element_type<N, T>& get_rec(T& t)
+{
+  nth_element_type<N, T>* ptr{};
+  constexpr access_recursive<T> rec;
+  int k = 0;
+
+  boost::pfr::for_each_field(t, [&] <typename F> (F& field) {
+      if(ptr)
+        return;
+      if(k == N)
+      {
+        ptr = &access_deepest_aggregate_first_element(field);
+      }
+
+      if constexpr(aggregate<F>)
+      {
+        // Go look in it
+        if(auto ret = get_rec_impl(field, k, nth_element<N, T>{})) {
+          ptr = ret;
+        }
+      }
+      else
+      {
+        k++;
+      }
+  });
+
+  return *ptr;
+}
+
 
 template <template <typename...> typename Container, typename T>
 struct recursive_arrays
@@ -158,17 +229,15 @@ struct recursive_arrays
   }
 
   //! Add a new entity at the end of the storage.
-  /* TODO
   std::size_t add_entity(T e)
   {
     [&]<std::size_t... N>(std::index_sequence<N...>)
     {
-      (std::get<N>(vec).push_back(std::move(boost::pfr::get<N>(e))), ...);
+      (std::get<N>(vec).push_back(std::move(get_rec<N>(e))), ...);
     }
     (indices{});
     return size() - 1;
   }
-  */
 
   //! Get a view on the list of components
   template <typename Component>
