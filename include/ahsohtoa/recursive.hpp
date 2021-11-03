@@ -101,7 +101,7 @@ struct access_recursive
   }
 };
 
-enum member_offset : int
+enum class member_offset : int
 {
 };
 
@@ -223,9 +223,4 @@ struct recursive_arrays
 };
 
 }
-#define access(root, member)                                            \
-  []                                                                    \
-  {                                                                     \
-    constexpr root e{};                                                 \
-    return (ahso::member_offset)(((intptr_t)&e.member) - intptr_t(&e)); \
-  }()
+#define access(root, member) ((ahso::member_offset)offsetof(root, member))

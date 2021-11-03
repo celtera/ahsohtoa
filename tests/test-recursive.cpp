@@ -106,7 +106,7 @@ int main()
   // If one provides a reference_type with a good constructor,
   // this will also work:
   for(int i = 0; i < e.size(); i++) {
-      auto elt = e.get(i);
+      entity::reference_type elt = e[i];
       elt.physics.position.x += elt.physics.speed.x;
       elt.physics.position.y += elt.physics.speed.y;
       elt.physics.position.z += elt.physics.speed.z;
