@@ -16,10 +16,6 @@
  *   float y;
  * };
  */
- struct Foo {
-   int x;
-   float y;
- };
 
 namespace ahso
 {
